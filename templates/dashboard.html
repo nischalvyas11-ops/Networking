@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SVNIT Academic Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-50 font-sans text-slate-800 antialiased min-h-screen flex flex-col">
+
+    <!-- Top Navigation -->
+    <header class="border-b border-slate-200 bg-white sticky top-0 z-10 shadow-sm">
+        <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="w-9 h-9 bg-sky-800 text-white flex items-center justify-center font-bold text-sm rounded-md shadow-sm">
+                    SV
+                </div>
+                <div>
+                    <h1 class="font-semibold text-slate-900 leading-none">SVNIT Network</h1>
+                    <span class="text-xs text-sky-700 font-medium">{{ department }} • Batch {{ batch }}</span>
+                </div>
+            </div>
+
+            <!-- User Info & Logout -->
+            <div class="flex items-center space-x-4">
+                <p class="text-xs font-medium text-slate-900 hidden sm:block">{{ name }}</p>
+                <a 
+                    href="/logout" 
+                    class="border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-medium px-3 py-1.5 rounded-md transition"
+                >
+                    Sign Out
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Body -->
+    <main class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-grow w-full">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            
+            <!-- Left Column: Navigation -->
+            <div class="space-y-4">
+                <div class="bg-white border border-slate-200 rounded-lg p-4 shadow-sm">
+                    <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3">Platform Navigation</h2>
+                    <nav class="space-y-1">
+                        <a href="/dashboard" class="flex items-center space-x-3 px-3 py-2 rounded-md bg-sky-50 text-sky-800 font-medium text-sm">
+                            <span>Q&A Feed</span>
+                        </a>
+                        <a href="/inbox" class="flex items-center space-x-3 px-3 py-2 rounded-md hover:bg-slate-50 text-slate-700 text-sm transition">
+                            <span>Direct Messaging Inbox</span>
+                        </a>
+                    </nav>
+                </div>
+            </div>
+
+            <!-- Center/Right Column: Q&A Feed -->
+            <div class="md:col-span-2 space-y-6">
+                
+                <!-- Post Question Card -->
+                <div class="bg-white border border-slate-200 rounded-lg p-6 shadow-sm space-y-4">
+                    <h2 class="text-sm font-semibold text-slate-900">Ask the Academic Community</h2>
+                    <form id="question-form" class="space-y-3">
+                        <textarea 
+                            id="question-content" 
+                            rows="3" 
+                            placeholder="Type your academic or project-related question here..." 
+                            required
+                            class="w-full border border-slate-300 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-sky-700 focus:border-transparent resize-none"
+                        ></textarea>
+                        <div class="flex justify-end">
+                            <button 
+                                type="submit" 
+                                class="bg-sky-800 hover:bg-sky-900 text-white font-medium px-4 py-2 rounded-lg text-xs transition shadow-sm"
+                            >
+                                Post Question
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Questions Feed -->
+                <div class="space-y-4" id="questions-feed">
+                    <p class="text-xs text-slate-400 text-center py-4">Loading questions...</p>
+                </div>
+
+            </div>
+
+        </div>
+    </main>
+
+    <!-- JavaScript to handle live feed posting & loading -->
+    <script>
+        async function loadQuestions() {
+            try {
+                const response = await fetch('/api/questions');
+                const questions = await response.json();
+                const feed = document.getElementById('questions-feed');
+                
+                if (questions.length === 0) {
+                    feed.innerHTML = `<div class="bg-white border border-slate-200 rounded-lg p-6 text-center text-xs text-slate-400">No questions posted yet. Be the first to start a discussion!</div>`;
+                    return;
+                }
+
+                feed.innerHTML = questions.map(q => `
+                    <div class="bg-white border border-slate-200 rounded-lg p-5 shadow-sm space-y-3">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center space-x-2">
+                                <span class="font-semibold text-xs text-slate-900">${q.user_name}</span>
+                                <span class="text-slate-300">•</span>
+                                <span class="text-[11px] text-sky-700 font-medium">${q.department} (${q.batch})</span>
+                            </div>
+                            <span class="text-[10px] text-slate-400">${q.timestamp}</span>
+                        </div>
+                        <p class="text-sm text-slate-700 whitespace-pre-line">${q.content}</p>
+                    </div>
+                `).join('');
+            } catch (err) {
+                console.error('Failed to load questions:', err);
+            }
+        }
+
+        document.getElementById('question-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const content = document.getElementById('question-content').value;
+
+            const response = await fetch('/api/questions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content })
+            });
+
+            if (response.ok) {
+                document.getElementById('question-content').value = '';
+                loadQuestions();
+            }
+        });
+
+        // Load questions on page load
+        loadQuestions();
+    </script>
+</body>
+</html>

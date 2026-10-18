@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SVNIT Academic Network | Secure Portal</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in {
+            animation: fadeIn 0.5s ease-out forwards;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 font-sans text-slate-800 antialiased min-h-screen flex items-center justify-center p-4">
+
+    <div class="w-full max-w-md animate-fade-in">
+        <!-- Main Login Card -->
+        <div class="bg-white/95 backdrop-blur-md border border-slate-200/80 rounded-2xl shadow-2xl p-8 relative overflow-hidden">
+            
+            <!-- Decorative top accent bar -->
+            <div class="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-sky-600 via-blue-700 to-indigo-800"></div>
+
+            <div class="flex flex-col items-center text-center mb-6">
+                <!-- Academic Shield Logo Icon -->
+                <div class="w-16 h-16 bg-gradient-to-br from-sky-800 to-blue-900 text-white flex items-center justify-center rounded-xl shadow-lg mb-4 transform transition hover:scale-105 duration-300">
+                    <svg class="w-9 h-9" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 14l9-5-9-5-9 5 9 5z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 14l6.16-3.422a12.083 12.083 0 01.665 11.955L12 21.5l-6.16-3.43c2.079-.544 4.31-.83 6.16-.83z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 11v5.5a3.5 3.5 0 01-7 0V11" />
+                    </svg>
+                </div>
+                
+                <h1 class="text-2xl font-extrabold text-slate-900 tracking-tight">SVNIT Academic Network</h1>
+                <p class="text-[11px] font-semibold tracking-wider text-sky-700 uppercase mt-1">Sardar Vallabhbhai National Institute of Technology</p>
+                <p class="text-sm text-slate-600 mt-2">Sign in securely using your official institutional Google account (<span class="font-mono text-xs bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">@svnit.ac.in</span> or <span class="font-mono text-xs bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">@aid.svnit.ac.in</span>).</p>
+            </div>
+
+            <!-- Google OAuth Login Button -->
+            <div class="mt-6">
+                <a href="/login/google" class="w-full bg-sky-800 hover:bg-sky-900 text-white font-semibold py-3.5 px-4 rounded-xl text-sm transition duration-200 flex items-center justify-center space-x-3 shadow-lg shadow-sky-900/20 transform hover:-translate-y-0.5">
+                    <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24">
+                        <path d="M12.24 10.28V14.2h6.8c-.3 1.5-1.7 4.2-6.8 4.2-4.1 0-7.5-3.4-7.5-7.5s3.4-7.5 7.5-7.5c2.3 0 3.8 1 4.7 1.8l3.2-3.2C18.1 1.3 15.4 0 12.2 0 5.5 0 0 5.5 0 12.2s5.5 12.2 12.2 12.2c7 0 11.6-4.9 11.6-11.8 0-.8-.1-1.5-.2-2.2h-11.4z"/>
+                    </svg>
+                    <span>Sign in with Google Workspace</span>
+                </a>
+            </div>
+
+            <!-- Feature Highlights Grid -->
+            <div class="mt-8 pt-6 border-t border-slate-100 grid grid-cols-3 gap-2 text-center">
+                <div class="bg-slate-50 p-2 rounded-lg">
+                    <span class="block text-[11px] font-bold text-slate-700">Auto-Branch</span>
+                    <span class="text-[10px] text-slate-500">Smart parsing</span>
+                </div>
+                <div class="bg-slate-50 p-2 rounded-lg">
+                    <span class="block text-[11px] font-bold text-slate-700">Peer Q&A</span>
+                    <span class="text-[10px] text-slate-500">Branch feeds</span>
+                </div>
+                <div class="bg-slate-50 p-2 rounded-lg">
+                    <span class="block text-[11px] font-bold text-slate-700">Secure</span>
+                    <span class="text-[10px] text-slate-500">OAuth 2.0</span>
+                </div>
+            </div>
+
+            <p class="text-[11px] text-slate-400 text-center mt-6">
+                Restricted strictly to authorized SVNIT students & faculty.
+            </p>
+        </div>
+    </div>
+
+</body>
+</html>
