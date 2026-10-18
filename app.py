@@ -123,8 +123,8 @@ async def auth_callback(request: Request):
     email = user_info.get('email', '')
     full_name = user_info.get('name', 'SVNIT Student')
 
-    if not (email.endswith('@gmail.com') or email.endswith('@aid.svnit.ac.in')):
-        return {"error": "Access denied. Only official @gmail.com and @aid.svnit.ac.in emails are allowed."}
+    if not (email.endswith('@svnit.ac.in') or email.endswith('@aid.svnit.ac.in')):
+        return {"error": "Access denied. Only official @svnit.ac.in and @aid.svnit.ac.in emails are allowed."}
 
     parsed_metadata = parse_svnit_email(email)
 
