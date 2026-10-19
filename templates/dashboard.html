@@ -21,9 +21,18 @@
                 </div>
             </div>
 
-            <!-- User Info & Logout -->
+            <!-- User Avatar, Profile Link & Logout -->
             <div class="flex items-center space-x-4">
-                <p class="text-xs font-medium text-slate-900 hidden sm:block">{{ name }}</p>
+                <a href="/profile" class="flex items-center space-x-2.5 hover:opacity-80 transition group">
+                    {% if avatar_url %}
+                        <img src="{{ avatar_url }}" alt="Profile" class="w-8 h-8 rounded-full border border-slate-300 object-cover shadow-sm">
+                    {% else %}
+                        <div class="w-8 h-8 rounded-full bg-sky-800 text-white flex items-center justify-center text-xs font-bold shadow-sm">
+                            {{ name[0] }}
+                        </div>
+                    {% endif %}
+                    <span class="text-xs font-medium text-slate-900 hidden sm:block group-hover:text-sky-800">{{ name }}</span>
+                </a>
                 <a 
                     href="/logout" 
                     class="border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-medium px-3 py-1.5 rounded-md transition"
@@ -48,6 +57,9 @@
                         </a>
                         <a href="/inbox" class="flex items-center space-x-3 px-3 py-2 rounded-md hover:bg-slate-50 text-slate-700 text-sm transition">
                             <span>Direct Messaging Inbox</span>
+                        </a>
+                        <a href="/profile" class="flex items-center space-x-3 px-3 py-2 rounded-md hover:bg-slate-50 text-slate-700 text-sm transition">
+                            <span>My Profile & Bio</span>
                         </a>
                     </nav>
                 </div>

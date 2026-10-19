@@ -202,7 +202,8 @@ async def dashboard(request: Request):
         context={
             "name": user.get('name'),
             "department": user.get('department'),
-            "batch": user.get('batch')
+            "batch": user.get('batch'),
+            "avatar_url": user.get('avatar_url')
         }
     )
 
