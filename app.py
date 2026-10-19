@@ -50,6 +50,7 @@ def init_db():
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS questions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_email TEXT,
             user_name TEXT,
             department TEXT,
             batch TEXT,
@@ -57,6 +58,10 @@ def init_db():
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    try:
+        cursor.execute("ALTER TABLE questions ADD COLUMN user_email TEXT")
+    except sqlite3.OperationalError:
+        pass
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
@@ -262,8 +267,8 @@ async def create_question(question: QuestionCreate, request: Request):
     conn = sqlite3.connect("svnit_network.db")
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO questions (user_name, department, batch, content) VALUES (?, ?, ?, ?)",
-        (user.get('name'), user.get('department'), user.get('batch'), question.content)
+        "INSERT INTO questions (user_email, user_name, department, batch, content) VALUES (?, ?, ?, ?, ?)",
+        (user.get('email'), user.get('name'), user.get('department'), user.get('batch'), question.content)
     )
     conn.commit()
     conn.close()
@@ -273,7 +278,7 @@ async def create_question(question: QuestionCreate, request: Request):
 async def get_questions(request: Request):
     conn = sqlite3.connect("svnit_network.db")
     cursor = conn.cursor()
-    cursor.execute("SELECT id, user_name, department, batch, content, timestamp FROM questions ORDER BY id DESC")
+    cursor.execute("SELECT id, user_email, user_name, department, batch, content, timestamp FROM questions ORDER BY id DESC")
     rows = cursor.fetchall()
     conn.close()
     
@@ -281,19 +286,43 @@ async def get_questions(request: Request):
     for row in rows:
         questions.append({
             "id": row[0],
-            "user_name": row[1],
-            "department": row[2],
-            "batch": row[3],
-            "content": row[4],
-            "timestamp": row[5]
+            "user_email": row[1],
+            "user_name": row[2],
+            "department": row[3],
+            "batch": row[4],
+            "content": row[5],
+            "timestamp": row[6]
         })
     return questions
-
 # --- Messaging API Routes ---
 
 class MessageCreate(BaseModel):
     recipient_email: str
     content: str
+
+@app.delete("/api/questions/{question_id}")
+async def delete_question(question_id: int, request: Request):
+    user = get_current_user(request)
+    if not user:
+        return {"error": "Unauthorized"}
+    
+    conn = sqlite3.connect("svnit_network.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_email FROM questions WHERE id = ?", (question_id,))
+    row = cursor.fetchone()
+    
+    if not row:
+        conn.close()
+        return {"error": "Not found"}
+        
+    if row[0] != user.get('email'):
+        conn.close()
+        return {"error": "Forbidden"}
+        
+    cursor.execute("DELETE FROM questions WHERE id = ?", (question_id,))
+    conn.commit()
+    conn.close()
+    return {"status": "success"}
 
 @app.get("/api/users")
 async def get_users(request: Request):

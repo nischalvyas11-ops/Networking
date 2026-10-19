@@ -6,7 +6,7 @@
     <title>SVNIT Academic Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-slate-50 font-sans text-slate-800 antialiased min-h-screen flex flex-col">
+<body class="bg-slate-50 font-sans text-slate-800 antialiased min-h-screen flex flex-col" data-user-email="{{ email }}">
 
     <!-- Top Navigation -->
     <header class="border-b border-slate-200 bg-white sticky top-0 z-10 shadow-sm">
@@ -21,22 +21,9 @@
                 </div>
             </div>
 
-            <!-- User Avatar, Profile Link & Logout -->
             <div class="flex items-center space-x-4">
-                <a href="/profile" class="flex items-center space-x-2.5 hover:opacity-80 transition group">
-                    {% if avatar_url %}
-                        <img src="{{ avatar_url }}" alt="Profile" class="w-8 h-8 rounded-full border border-slate-300 object-cover shadow-sm">
-                    {% else %}
-                        <div class="w-8 h-8 rounded-full bg-sky-800 text-white flex items-center justify-center text-xs font-bold shadow-sm">
-                            {{ name[0] }}
-                        </div>
-                    {% endif %}
-                    <span class="text-xs font-medium text-slate-900 hidden sm:block group-hover:text-sky-800">{{ name }}</span>
-                </a>
-                <a 
-                    href="/logout" 
-                    class="border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-medium px-3 py-1.5 rounded-md transition"
-                >
+                <p class="text-xs font-medium text-slate-900 hidden sm:block">{{ name }}</p>
+                <a href="/logout" class="border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-medium px-3 py-1.5 rounded-md transition">
                     Sign Out
                 </a>
             </div>
@@ -80,10 +67,7 @@
                             class="w-full border border-slate-300 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-sky-700 focus:border-transparent resize-none"
                         ></textarea>
                         <div class="flex justify-end">
-                            <button 
-                                type="submit" 
-                                class="bg-sky-800 hover:bg-sky-900 text-white font-medium px-4 py-2 rounded-lg text-xs transition shadow-sm"
-                            >
+                            <button type="submit" class="bg-sky-800 hover:bg-sky-900 text-white font-medium px-4 py-2 rounded-lg text-xs transition shadow-sm">
                                 Post Question
                             </button>
                         </div>
@@ -100,8 +84,10 @@
         </div>
     </main>
 
-    <!-- JavaScript to handle live feed posting & loading -->
+    <!-- JavaScript to handle live feed posting, loading & deletion -->
     <script>
+        const currentUserEmail = document.body.getAttribute('data-user-email');
+
         async function loadQuestions() {
             try {
                 const response = await fetch('/api/questions');
@@ -113,21 +99,37 @@
                     return;
                 }
 
-                feed.innerHTML = questions.map(q => `
-                    <div class="bg-white border border-slate-200 rounded-lg p-5 shadow-sm space-y-3">
-                        <div class="flex items-center justify-between">
-                            <div class="flex items-center space-x-2">
-                                <span class="font-semibold text-xs text-slate-900">${q.user_name}</span>
-                                <span class="text-slate-300">•</span>
-                                <span class="text-[11px] text-sky-700 font-medium">${q.department} (${q.batch})</span>
+                feed.innerHTML = questions.map(q => {
+                    const isAuthor = q.user_email === currentUserEmail;
+                    return `
+                        <div class="bg-white border border-slate-200 rounded-lg p-5 shadow-sm space-y-3">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center space-x-2">
+                                    <span class="font-semibold text-xs text-slate-900">${q.user_name}</span>
+                                    <span class="text-slate-300">•</span>
+                                    <span class="text-[11px] text-sky-700 font-medium">${q.department} (${q.batch})</span>
+                                </div>
+                                <div class="flex items-center space-x-3">
+                                    <span class="text-[10px] text-slate-400">${q.timestamp}</span>
+                                    ${isAuthor ? `<button onclick="deleteQuestion(${q.id})" class="text-[11px] text-red-600 hover:underline font-medium">Delete</button>` : ''}
+                                </div>
                             </div>
-                            <span class="text-[10px] text-slate-400">${q.timestamp}</span>
+                            <p class="text-sm text-slate-700 whitespace-pre-line">${q.content}</p>
                         </div>
-                        <p class="text-sm text-slate-700 whitespace-pre-line">${q.content}</p>
-                    </div>
-                `).join('');
+                    `;
+                }).join('');
             } catch (err) {
                 console.error('Failed to load questions:', err);
+            }
+        }
+
+        async function deleteQuestion(id) {
+            if (!confirm("Are you sure you want to delete this question?")) return;
+            const response = await fetch(`/api/questions/${id}`, { method: 'DELETE' });
+            if (response.ok) {
+                loadQuestions();
+            } else {
+                alert("Failed to delete question.");
             }
         }
 
@@ -147,7 +149,6 @@
             }
         });
 
-        // Load questions on page load
         loadQuestions();
     </script>
 </body>
