@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Profile - SVNIT Network</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 font-sans min-h-screen text-gray-800">
+
+    <nav class="bg-indigo-700 text-white p-4 shadow-md">
+        <div class="max-w-3xl mx-auto flex justify-between items-center">
+            <h1 class="text-xl font-bold">SVNIT Network</h1>
+            <div class="space-x-4">
+                <a href="/messages" class="hover:underline">Messages</a>
+                <a href="/profile" class="font-semibold underline">Profile</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="max-w-xl mx-auto mt-12 p-6 bg-white rounded-lg shadow-md border border-gray-100">
+        <h2 class="text-2xl font-bold mb-6">Your Profile</h2>
+
+        <div class="flex items-center space-x-4 mb-6 pb-6 border-b border-gray-100">
+            {% if user['avatar_url'] %}
+                <img src="{{ user['avatar_url'] }}" alt="Profile Picture" class="w-20 h-20 rounded-full border-2 border-indigo-600 object-cover">
+            {% else %}
+                <div class="w-20 h-20 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-2xl">
+                    {{ user['name'][0] if user['name'] else 'U' }}
+                </div>
+            {% endif %}
+            <div>
+                <h3 class="text-lg font-bold text-gray-900">{{ user['name'] }}</h3>
+                <p class="text-sm text-gray-500">{{ user['email'] }}</p>
+                <span class="inline-block mt-1 bg-green-50 text-green-700 text-xs px-2 py-0.5 rounded border border-green-200 font-medium">Google Picture Synced</span>
+            </div>
+        </div>
+
+        <form action="/profile/update-bio" method="POST" class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Bio / Status</label>
+                <textarea name="bio" rows="3" placeholder="e.g., Interested in AI and competitive coding. Reach out for projects!" class="w-full p-3 border rounded-md focus:ring-2 focus:ring-indigo-500 text-sm">{{ user['bio'] if user['bio'] else '' }}</textarea>
+                <p class="text-xs text-gray-400 mt-1">Share a brief line so classmates know what you're up to.</p>
+            </div>
+
+            <button type="submit" class="w-full bg-indigo-600 text-white py-2.5 rounded-md font-semibold hover:bg-indigo-700 transition">Save Bio</button>
+        </form>
+    </div>
+
+</body>
+</html>

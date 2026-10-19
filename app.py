@@ -7,6 +7,9 @@ from starlette.middleware.sessions import SessionMiddleware
 from authlib.integrations.starlette_client import OAuth
 from pydantic import BaseModel
 
+from fastapi import FastAPI, Request, Form, Depends, HTTPException, status
+from fastapi.responses import HTMLResponse, RedirectResponse
+
 # Initialize FastAPI app
 app = FastAPI()
 
@@ -15,6 +18,26 @@ app.add_middleware(SessionMiddleware, secret_key="svnit_super_secret_random_stri
 
 # Setup Jinja2 HTML templates
 templates = Jinja2Templates(directory="templates")
+
+import sqlite3
+
+def get_db():
+    conn = sqlite3.connect("svnit_network.db")
+    conn.row_factory = sqlite3.Row  # Allows accessing columns by name like user["email"]
+    return conn
+
+def get_current_user(request: Request):
+    user_session = request.session.get("user")
+    if not user_session or "email" not in user_session:
+        return None
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE email = ?", (user_session["email"],))
+    user = cursor.fetchone()
+    conn.close()
+    
+    return user
 
 # Configure Google OAuth
 import os
@@ -42,6 +65,7 @@ def init_db():
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
+
     # Users directory table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
@@ -59,6 +83,16 @@ def init_db():
             recipient_email TEXT,
             content TEXT,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    #Profile table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
+            avatar_url TEXT DEFAULT '',
+            bio TEXT DEFAULT ''
         )
     """)
     conn.commit()
@@ -122,20 +156,27 @@ async def auth_callback(request: Request):
 
     email = user_info.get('email', '')
     full_name = user_info.get('name', 'SVNIT Student')
+    picture = user_info.get('picture', '')  # <-- Extracted Google profile picture URL
 
     if not (email.endswith('@svnit.ac.in') or email.endswith('@aid.svnit.ac.in')):
         return {"error": "Access denied. Only official @svnit.ac.in and @aid.svnit.ac.in emails are allowed."}
 
     parsed_metadata = parse_svnit_email(email)
 
-    # Upsert user into database directory
+    # Upsert user into database directory (including avatar_url)
     conn = sqlite3.connect("svnit_network.db")
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO users (email, name, department, batch) VALUES (?, ?, ?, ?)
-        ON CONFLICT(email) DO UPDATE SET name=?, department=?, batch=?
-    """, (email, full_name, parsed_metadata["department"], parsed_metadata["batch"],
-          full_name, parsed_metadata["department"], parsed_metadata["batch"]))
+        INSERT INTO users (email, name, department, batch, avatar_url) VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(email) DO UPDATE SET 
+            name=?, 
+            department=?, 
+            batch=?, 
+            avatar_url=?
+    """, (
+        email, full_name, parsed_metadata["department"], parsed_metadata["batch"], picture,
+        full_name, parsed_metadata["department"], parsed_metadata["batch"], picture
+    ))
     conn.commit()
     conn.close()
 
@@ -143,7 +184,8 @@ async def auth_callback(request: Request):
         "email": email,
         "name": full_name,
         "department": parsed_metadata["department"],
-        "batch": parsed_metadata["batch"]
+        "batch": parsed_metadata["batch"],
+        "avatar_url": picture  # <-- Stored in session for easy rendering in templates
     }
 
     return RedirectResponse(url="/dashboard", status_code=303)
@@ -163,6 +205,17 @@ async def dashboard(request: Request):
             "batch": user.get('batch')
         }
     )
+# --- Profile Management Routes ---
+
+@app.get("/profile", response_class=HTMLResponse)
+async def view_profile(request: Request):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse(url="/login")
+    return templates.TemplateResponse("profile.html", {"request": request, "user": user})
+
+
+   
 
 @app.get("/inbox")
 async def inbox(request: Request):
@@ -178,6 +231,33 @@ async def inbox(request: Request):
             "email": user.get('email')
         }
     )
+
+# --- Profile Management Routes ---
+
+@app.get("/profile", response_class=HTMLResponse)
+async def view_profile(request: Request):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse(url="/login")
+    return templates.TemplateResponse("profile.html", {"request": request, "user": user})
+
+
+@app.post("/profile/update-bio")
+async def update_bio(request: Request, bio: str = Form("")):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse(url="/login")
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE users SET bio = ? WHERE email = ?", 
+        (bio, user["email"])
+    )
+    conn.commit()
+    conn.close()
+    
+    return RedirectResponse(url="/profile", status_code=status.HTTP_302_FOUND)
 
 @app.get("/logout")
 async def logout(request: Request):
