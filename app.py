@@ -197,12 +197,12 @@ async def dashboard(request: Request):
         name="dashboard.html", 
         context={
             "name": user.get("name", ""),
+            "email": user.get("email", ""),  # <-- THIS WAS MISSING
             "department": user.get("department", ""),
             "batch": user.get("batch", ""),
             "avatar_url": user.get("avatar_url", "")
         }
     )
-
 @app.get("/inbox")
 async def inbox(request: Request):
     user = get_current_user(request)
