@@ -24,14 +24,20 @@ def get_current_user(request: Request):
     if not user_session or "email" not in user_session:
         return None
     
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM users WHERE email = ?", (user_session["email"],))
-    user_row = cursor.fetchone()
-    conn.close()
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM users WHERE email = ?", (user_session["email"],))
+        user_row = cursor.fetchone()
+        conn.close()
+        
+        if user_row:
+            return dict(user_row)
+    except Exception:
+        pass
     
-    if user_row:
-        return dict(user_row)
+    # Automatically clear stale/corrupted sessions
+    request.session.clear()
     return None
 
 oauth = OAuth()
@@ -151,8 +157,14 @@ def parse_svnit_email(email: str):
 
 @app.get("/")
 async def home(request: Request):
-    if "user" in request.session:
+    user = get_current_user(request)
+    if user:
         return RedirectResponse(url="/dashboard", status_code=303)
+    
+    # Clear invalid session leftovers if any exist
+    if "user" in request.session and not user:
+        request.session.clear()
+        
     return templates.TemplateResponse(request=request, name="index.html", context={})
 
 @app.get("/login/google")
