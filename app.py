@@ -61,7 +61,7 @@ def init_db():
         )
     """)
 
-    # Unified Users directory & profile table (includes avatar_url and bio)
+    # Unified Users directory & profile table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             email TEXT PRIMARY KEY,
@@ -83,6 +83,17 @@ def init_db():
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    
+    # Safely add columns if the table already existed without them
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN avatar_url TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+        
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN bio TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
     
     conn.commit()
     conn.close()
