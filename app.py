@@ -132,21 +132,43 @@ def parse_svnit_email(email: str):
     email_lower = email.lower()
     local_part = email_lower.split('@')[0]
     
-    department = "Artificial Intelligence"
+    department = "General / Undergraduate"
     batch_year = "2026"
     
+    # Check specific department codes first (longest/most specific patterns first)
     if "ai" in local_part:
         department = "Artificial Intelligence"
-    elif "ec" in local_part:
+    elif "ece" in local_part or "ec" in local_part:
         department = "Electronics and Communication"
+    elif "cs" in local_part or "co" in local_part:
+        department = "Computer Science "
     elif "ee" in local_part:
         department = "Electrical Engineering"
-    elif "cs" in local_part:
-        department = "Computer Science"
+    elif "me" in local_part or "mech" in local_part:
+        department = "Mechanical Engineering"
+    elif "ce" in local_part or "civ" in local_part:
+        department = "Civil Engineering"
+    elif "ch" in local_part or "che" in local_part:
+        department = "Chemical Engineering"
+    elif "ph" in local_part or "phy" in local_part:
+            department = "Physics"
+    elif "cy" in local_part or "chem" in local_part:
+                department = "Chemistry"
+    elif "mh" in local_part or "amh" in local_part:
+                department = "Mathematics"
+    elif "ic" in local_part or "id" in local_part:
+                department = "Industrial Chemistry"
+    elif "vl" in local_part or "eve" in local_part:
+                department = "Electronics and VLSI"
+    
         
-    match = re.search(r'i(\d{2})', local_part)
+    # Extract batch year from patterns like i26, u24, 26, etc.
+    match = re.search(r'(?:i|u)?(\d{2})', local_part)
     if match:
-        batch_year = f"20{match.group(1)}"
+        YY = match.group(1)
+        # Assuming 21-30 are 2020s batches
+        if int(YY) >= 20 and int(YY) <= 30:
+            batch_year = f"20{YY}"
         
     return {
         "department": department,
