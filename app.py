@@ -1,25 +1,22 @@
 import sqlite3
 import re
 import os
-from fastapi import FastAPI, Request, Form, HTTPException, status
+from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 from authlib.integrations.starlette_client import OAuth
 from pydantic import BaseModel
 
-# Initialize FastAPI app
 app = FastAPI()
 
-# Secure session middleware for tracking logged-in users
 app.add_middleware(SessionMiddleware, secret_key="svnit_super_secret_random_string_987")
 
-# Setup Jinja2 HTML templates
 templates = Jinja2Templates(directory="templates")
 
 def get_db():
     conn = sqlite3.connect("svnit_network.db")
-    conn.row_factory = sqlite3.Row  # Allows accessing columns by name like user["email"]
+    conn.row_factory = sqlite3.Row
     return conn
 
 def get_current_user(request: Request):
@@ -30,12 +27,13 @@ def get_current_user(request: Request):
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM users WHERE email = ?", (user_session["email"],))
-    user = cursor.fetchone()
+    user_row = cursor.fetchone()
     conn.close()
     
-    return user
+    if user_row:
+        return dict(user_row)
+    return None
 
-# Configure Google OAuth
 oauth = OAuth()
 oauth.register(
     name='google',
@@ -49,7 +47,6 @@ def init_db():
     conn = sqlite3.connect("svnit_network.db")
     cursor = conn.cursor()
     
-    # Questions table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS questions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -61,7 +58,6 @@ def init_db():
         )
     """)
 
-    # Unified Users directory & profile table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             email TEXT PRIMARY KEY,
@@ -73,7 +69,6 @@ def init_db():
         )
     """)
     
-    # Direct Messages table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -84,27 +79,24 @@ def init_db():
         )
     """)
     
-    # Safely add columns if the table already existed without them
     try:
         cursor.execute("ALTER TABLE users ADD COLUMN avatar_url TEXT DEFAULT ''")
     except sqlite3.OperationalError:
-        pass  # Column already exists
+        pass
         
     try:
         cursor.execute("ALTER TABLE users ADD COLUMN bio TEXT DEFAULT ''")
     except sqlite3.OperationalError:
-        pass  # Column already exists
+        pass
     
     conn.commit()
     conn.close()
 
-# Automatically run init_db when FastAPI starts up
 @app.on_event("startup")
 def startup_event():
     init_db()
 
 def parse_svnit_email(email: str):
-    """Extracts department and batch year from an SVNIT email (e.g., i26ai007@aid.svnit.ac.in)."""
     email_lower = email.lower()
     local_part = email_lower.split('@')[0]
     
@@ -156,14 +148,13 @@ async def auth_callback(request: Request):
 
     email = user_info.get('email', '')
     full_name = user_info.get('name', 'SVNIT Student')
-    picture = user_info.get('picture', '')  # Extracted Google profile picture URL
+    picture = user_info.get('picture', '')
 
     if not (email.endswith('@svnit.ac.in') or email.endswith('@aid.svnit.ac.in')):
         return {"error": "Access denied. Only official @svnit.ac.in and @aid.svnit.ac.in emails are allowed."}
 
     parsed_metadata = parse_svnit_email(email)
 
-    # Upsert user into database directory (including avatar_url)
     conn = sqlite3.connect("svnit_network.db")
     cursor = conn.cursor()
     cursor.execute("""
@@ -192,7 +183,7 @@ async def auth_callback(request: Request):
 
 @app.get("/dashboard")
 async def dashboard(request: Request):
-    user = request.session.get('user')
+    user = get_current_user(request)
     if not user:
         return RedirectResponse(url="/", status_code=303)
     
@@ -200,16 +191,16 @@ async def dashboard(request: Request):
         request=request, 
         name="dashboard.html", 
         context={
-            "name": user.get('name'),
-            "department": user.get('department'),
-            "batch": user.get('batch'),
-            "avatar_url": user.get('avatar_url')
+            "name": user.get("name", ""),
+            "department": user.get("department", ""),
+            "batch": user.get("batch", ""),
+            "avatar_url": user.get("avatar_url", "")
         }
     )
 
 @app.get("/inbox")
 async def inbox(request: Request):
-    user = request.session.get('user')
+    user = get_current_user(request)
     if not user:
         return RedirectResponse(url="/", status_code=303)
         
@@ -217,8 +208,8 @@ async def inbox(request: Request):
         request=request, 
         name="inbox.html", 
         context={
-            "name": user.get('name'),
-            "email": user.get('email')
+            "name": user.get("name", ""),
+            "email": user.get("email", "")
         }
     )
 
@@ -229,7 +220,11 @@ async def view_profile(request: Request):
     user = get_current_user(request)
     if not user:
         return RedirectResponse(url="/", status_code=303)
-    return templates.TemplateResponse("profile.html", {"request": request, "user": user})
+    return templates.TemplateResponse(
+        request=request, 
+        name="profile.html", 
+        context={"user": user}
+    )
 
 @app.post("/profile/update-bio")
 async def update_bio(request: Request, bio: str = Form("")):
@@ -260,7 +255,7 @@ class QuestionCreate(BaseModel):
 
 @app.post("/api/questions")
 async def create_question(question: QuestionCreate, request: Request):
-    user = request.session.get('user')
+    user = get_current_user(request)
     if not user:
         return {"error": "Unauthorized"}
     
@@ -302,7 +297,7 @@ class MessageCreate(BaseModel):
 
 @app.get("/api/users")
 async def get_users(request: Request):
-    user = request.session.get('user')
+    user = get_current_user(request)
     if not user:
         return {"error": "Unauthorized"}
     
@@ -324,7 +319,7 @@ async def get_users(request: Request):
 
 @app.post("/api/messages")
 async def send_message(msg: MessageCreate, request: Request):
-    user = request.session.get('user')
+    user = get_current_user(request)
     if not user:
         return {"error": "Unauthorized"}
     
@@ -340,7 +335,7 @@ async def send_message(msg: MessageCreate, request: Request):
 
 @app.get("/api/messages/{peer_email}")
 async def get_messages(peer_email: str, request: Request):
-    user = request.session.get('user')
+    user = get_current_user(request)
     if not user:
         return {"error": "Unauthorized"}
     
@@ -366,8 +361,6 @@ async def get_messages(peer_email: str, request: Request):
             "timestamp": r[3]
         })
     return messages
-
-# --- Server Startup ---
 
 if __name__ == "__main__":
     import uvicorn
