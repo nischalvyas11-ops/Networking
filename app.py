@@ -83,6 +83,27 @@ def init_db():
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS replies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            question_id INTEGER,
+            user_email TEXT,
+            user_name TEXT,
+            department TEXT,
+            batch TEXT,
+            content TEXT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS upvotes (
+            question_id INTEGER,
+            user_email TEXT,
+            PRIMARY KEY (question_id, user_email)
+        )
+    """)
     
     try:
         cursor.execute("ALTER TABLE users ADD COLUMN avatar_url TEXT DEFAULT ''")
@@ -197,12 +218,13 @@ async def dashboard(request: Request):
         name="dashboard.html", 
         context={
             "name": user.get("name", ""),
-            "email": user.get("email", ""),  # <-- THIS WAS MISSING
+            "email": user.get("email", ""),
             "department": user.get("department", ""),
             "batch": user.get("batch", ""),
             "avatar_url": user.get("avatar_url", "")
         }
     )
+
 @app.get("/inbox")
 async def inbox(request: Request):
     user = get_current_user(request)
@@ -217,8 +239,6 @@ async def inbox(request: Request):
             "email": user.get("email", "")
         }
     )
-
-# --- Profile Management Routes ---
 
 @app.get("/profile", response_class=HTMLResponse)
 async def view_profile(request: Request):
@@ -239,10 +259,7 @@ async def update_bio(request: Request, bio: str = Form("")):
     
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute(
-        "UPDATE users SET bio = ? WHERE email = ?", 
-        (bio, user["email"])
-    )
+    cursor.execute("UPDATE users SET bio = ? WHERE email = ?", (bio, user["email"]))
     conn.commit()
     conn.close()
     
@@ -256,6 +273,9 @@ async def logout(request: Request):
 # --- Q&A API Routes ---
 
 class QuestionCreate(BaseModel):
+    content: str
+
+class ReplyCreate(BaseModel):
     content: str
 
 @app.post("/api/questions")
@@ -276,9 +296,19 @@ async def create_question(question: QuestionCreate, request: Request):
 
 @app.get("/api/questions")
 async def get_questions(request: Request):
+    user = get_current_user(request)
+    my_email = user.get('email') if user else ""
+
     conn = sqlite3.connect("svnit_network.db")
     cursor = conn.cursor()
-    cursor.execute("SELECT id, user_email, user_name, department, batch, content, timestamp FROM questions ORDER BY id DESC")
+    cursor.execute("""
+        SELECT q.id, q.user_email, q.user_name, q.department, q.batch, q.content, q.timestamp,
+               (SELECT COUNT(*) FROM upvotes WHERE question_id = q.id) AS upvote_count,
+               (SELECT COUNT(*) FROM upvotes WHERE question_id = q.id AND user_email = ?) AS user_has_upvoted,
+               (SELECT COUNT(*) FROM replies WHERE question_id = q.id) AS reply_count
+        FROM questions q
+        ORDER BY q.id DESC
+    """, (my_email,))
     rows = cursor.fetchall()
     conn.close()
     
@@ -291,14 +321,73 @@ async def get_questions(request: Request):
             "department": row[3],
             "batch": row[4],
             "content": row[5],
-            "timestamp": row[6]
+            "timestamp": row[6],
+            "upvotes": row[7],
+            "has_upvoted": bool(row[8]),
+            "reply_count": row[9]
         })
     return questions
-# --- Messaging API Routes ---
 
-class MessageCreate(BaseModel):
-    recipient_email: str
-    content: str
+@app.post("/api/questions/{question_id}/upvote")
+async def toggle_upvote(question_id: int, request: Request):
+    user = get_current_user(request)
+    if not user:
+        return {"error": "Unauthorized"}
+    
+    my_email = user.get('email')
+    conn = sqlite3.connect("svnit_network.db")
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT 1 FROM upvotes WHERE question_id = ? AND user_email = ?", (question_id, my_email))
+    exists = cursor.fetchone()
+    
+    if exists:
+        cursor.execute("DELETE FROM upvotes WHERE question_id = ? AND user_email = ?", (question_id, my_email))
+        status = "unvoted"
+    else:
+        cursor.execute("INSERT INTO upvotes (question_id, user_email) VALUES (?, ?)", (question_id, my_email))
+        status = "upvoted"
+        
+    conn.commit()
+    conn.close()
+    return {"status": status}
+
+@app.get("/api/questions/{question_id}/replies")
+async def get_replies(question_id: int, request: Request):
+    conn = sqlite3.connect("svnit_network.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, user_email, user_name, department, batch, content, timestamp FROM replies WHERE question_id = ? ORDER BY id ASC", (question_id,))
+    rows = cursor.fetchall()
+    conn.close()
+    
+    replies = []
+    for r in rows:
+        replies.append({
+            "id": r[0],
+            "user_email": r[1],
+            "user_name": r[2],
+            "department": r[3],
+            "batch": r[4],
+            "content": r[5],
+            "timestamp": r[6]
+        })
+    return replies
+
+@app.post("/api/questions/{question_id}/replies")
+async def create_reply(question_id: int, reply: ReplyCreate, request: Request):
+    user = get_current_user(request)
+    if not user:
+        return {"error": "Unauthorized"}
+    
+    conn = sqlite3.connect("svnit_network.db")
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO replies (question_id, user_email, user_name, department, batch, content) VALUES (?, ?, ?, ?, ?, ?)",
+        (question_id, user.get('email'), user.get('name'), user.get('department'), user.get('batch'), reply.content)
+    )
+    conn.commit()
+    conn.close()
+    return {"status": "success"}
 
 @app.delete("/api/questions/{question_id}")
 async def delete_question(question_id: int, request: Request):
@@ -320,9 +409,17 @@ async def delete_question(question_id: int, request: Request):
         return {"error": "Forbidden"}
         
     cursor.execute("DELETE FROM questions WHERE id = ?", (question_id,))
+    cursor.execute("DELETE FROM replies WHERE question_id = ?", (question_id,))
+    cursor.execute("DELETE FROM upvotes WHERE question_id = ?", (question_id,))
     conn.commit()
     conn.close()
     return {"status": "success"}
+
+# --- Direct Messaging API Routes ---
+
+class MessageCreate(BaseModel):
+    recipient_email: str
+    content: str
 
 @app.get("/api/users")
 async def get_users(request: Request):
