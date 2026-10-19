@@ -1,14 +1,12 @@
 import sqlite3
 import re
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import RedirectResponse
+import os
+from fastapi import FastAPI, Request, Form, HTTPException, status
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 from authlib.integrations.starlette_client import OAuth
 from pydantic import BaseModel
-
-from fastapi import FastAPI, Request, Form, Depends, HTTPException, status
-from fastapi.responses import HTMLResponse, RedirectResponse
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -18,8 +16,6 @@ app.add_middleware(SessionMiddleware, secret_key="svnit_super_secret_random_stri
 
 # Setup Jinja2 HTML templates
 templates = Jinja2Templates(directory="templates")
-
-import sqlite3
 
 def get_db():
     conn = sqlite3.connect("svnit_network.db")
@@ -40,8 +36,6 @@ def get_current_user(request: Request):
     return user
 
 # Configure Google OAuth
-import os
-
 oauth = OAuth()
 oauth.register(
     name='google',
@@ -54,6 +48,7 @@ oauth.register(
 def init_db():
     conn = sqlite3.connect("svnit_network.db")
     cursor = conn.cursor()
+    
     # Questions table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS questions (
@@ -66,15 +61,18 @@ def init_db():
         )
     """)
 
-    # Users directory table
+    # Unified Users directory & profile table (includes avatar_url and bio)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             email TEXT PRIMARY KEY,
             name TEXT,
             department TEXT,
-            batch TEXT
+            batch TEXT,
+            avatar_url TEXT DEFAULT '',
+            bio TEXT DEFAULT ''
         )
     """)
+    
     # Direct Messages table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS messages (
@@ -85,16 +83,7 @@ def init_db():
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    #Profile table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email TEXT UNIQUE NOT NULL,
-            name TEXT NOT NULL,
-            avatar_url TEXT DEFAULT '',
-            bio TEXT DEFAULT ''
-        )
-    """)
+    
     conn.commit()
     conn.close()
 
@@ -156,7 +145,7 @@ async def auth_callback(request: Request):
 
     email = user_info.get('email', '')
     full_name = user_info.get('name', 'SVNIT Student')
-    picture = user_info.get('picture', '')  # <-- Extracted Google profile picture URL
+    picture = user_info.get('picture', '')  # Extracted Google profile picture URL
 
     if not (email.endswith('@svnit.ac.in') or email.endswith('@aid.svnit.ac.in')):
         return {"error": "Access denied. Only official @svnit.ac.in and @aid.svnit.ac.in emails are allowed."}
@@ -185,7 +174,7 @@ async def auth_callback(request: Request):
         "name": full_name,
         "department": parsed_metadata["department"],
         "batch": parsed_metadata["batch"],
-        "avatar_url": picture  # <-- Stored in session for easy rendering in templates
+        "avatar_url": picture
     }
 
     return RedirectResponse(url="/dashboard", status_code=303)
@@ -205,17 +194,6 @@ async def dashboard(request: Request):
             "batch": user.get('batch')
         }
     )
-# --- Profile Management Routes ---
-
-@app.get("/profile", response_class=HTMLResponse)
-async def view_profile(request: Request):
-    user = get_current_user(request)
-    if not user:
-        return RedirectResponse(url="/login")
-    return templates.TemplateResponse("profile.html", {"request": request, "user": user})
-
-
-   
 
 @app.get("/inbox")
 async def inbox(request: Request):
@@ -238,15 +216,14 @@ async def inbox(request: Request):
 async def view_profile(request: Request):
     user = get_current_user(request)
     if not user:
-        return RedirectResponse(url="/login")
+        return RedirectResponse(url="/", status_code=303)
     return templates.TemplateResponse("profile.html", {"request": request, "user": user})
-
 
 @app.post("/profile/update-bio")
 async def update_bio(request: Request, bio: str = Form("")):
     user = get_current_user(request)
     if not user:
-        return RedirectResponse(url="/login")
+        return RedirectResponse(url="/", status_code=303)
     
     conn = get_db()
     cursor = conn.cursor()
@@ -257,7 +234,7 @@ async def update_bio(request: Request, bio: str = Form("")):
     conn.commit()
     conn.close()
     
-    return RedirectResponse(url="/profile", status_code=status.HTTP_302_FOUND)
+    return RedirectResponse(url="/profile", status_code=303)
 
 @app.get("/logout")
 async def logout(request: Request):
