@@ -36,7 +36,6 @@ def get_db():
             database=TURSO_DATABASE_URL, 
             auth_token=TURSO_AUTH_TOKEN
         )
-        conn.row_factory = libsql.Row  # Column names work for Turso
         return conn
     else:
         conn = sqlite3.connect("svnit_network.db")
@@ -52,11 +51,15 @@ def get_current_user(request: Request):
         conn = get_db()
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM users WHERE email = ?", (user_session["email"],))
-        user_row = cursor.fetchone()
+        row = cursor.fetchone()
         conn.close()
         
-        if user_row:
-            return dict(user_row)
+        if row:
+            # Handle both sqlite3.Row (has keys) and Turso tuples (by column description)
+            if hasattr(row, "keys"):
+                return dict(row)
+            columns = [col[0] for col in cursor.description]
+            return dict(zip(columns, row))
     except Exception:
         pass
     
