@@ -70,7 +70,6 @@ oauth.register(
 )
 
 def init_db():
-    # Use your get_db() function instead of hardcoding sqlite3.connect!
     conn = get_db()
     cursor = conn.cursor()
     
@@ -85,11 +84,7 @@ def init_db():
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    try:
-        cursor.execute("ALTER TABLE questions ADD COLUMN user_email TEXT")
-    except Exception:
-        pass
-
+    
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             email TEXT PRIMARY KEY,
@@ -132,15 +127,19 @@ def init_db():
         )
     """)
     
-    try:
-        cursor.execute("ALTER TABLE users ADD COLUMN avatar_url TEXT DEFAULT ''")
-    except Exception:
-        pass
-        
-    try:
-        cursor.execute("ALTER TABLE users ADD COLUMN bio TEXT DEFAULT ''")
-    except Exception:
-        pass
+    # Safe column migrations for users table
+    columns_to_add = [
+        ("department", "TEXT"),
+        ("batch", "TEXT"),
+        ("avatar_url", "TEXT DEFAULT ''"),
+        ("bio", "TEXT DEFAULT ''")
+    ]
+    
+    for col_name, col_type in columns_to_add:
+        try:
+            cursor.execute(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}")
+        except Exception:
+            pass # Column already exists, ignore error
     
     conn.commit()
     conn.close()
