@@ -70,7 +70,8 @@ oauth.register(
 )
 
 def init_db():
-    conn = sqlite3.connect("svnit_network.db")
+    # Use your get_db() function instead of hardcoding sqlite3.connect!
+    conn = get_db()
     cursor = conn.cursor()
     
     cursor.execute("""
@@ -86,7 +87,7 @@ def init_db():
     """)
     try:
         cursor.execute("ALTER TABLE questions ADD COLUMN user_email TEXT")
-    except sqlite3.OperationalError:
+    except Exception:
         pass
 
     cursor.execute("""
@@ -133,12 +134,12 @@ def init_db():
     
     try:
         cursor.execute("ALTER TABLE users ADD COLUMN avatar_url TEXT DEFAULT ''")
-    except sqlite3.OperationalError:
+    except Exception:
         pass
         
     try:
         cursor.execute("ALTER TABLE users ADD COLUMN bio TEXT DEFAULT ''")
-    except sqlite3.OperationalError:
+    except Exception:
         pass
     
     conn.commit()
@@ -235,7 +236,8 @@ async def auth_callback(request: Request):
 
     parsed_metadata = parse_svnit_email(email)
 
-    conn = sqlite3.connect("svnit_network.db")
+    # UPDATED: Use your get_db() helper to connect to Turso in production
+    conn = get_db()
     cursor = conn.cursor()
     cursor.execute("""
         INSERT INTO users (email, name, department, batch, avatar_url) VALUES (?, ?, ?, ?, ?)
