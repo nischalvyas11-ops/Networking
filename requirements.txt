@@ -5,4 +5,4 @@ itsdangerous
 jinja2
 pydantic
 libsql-client
-requestss
+requests
