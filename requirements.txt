@@ -7,3 +7,4 @@ jinja2
 pydantic
 libsql-client
 requests
+python-multipart
