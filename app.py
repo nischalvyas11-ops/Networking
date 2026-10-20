@@ -1,6 +1,6 @@
+import os
 import sqlite3
 import re
-import os
 from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -10,12 +10,15 @@ from pydantic import BaseModel
 
 app = FastAPI()
 
-app.add_middleware(SessionMiddleware, secret_key="svnit_super_secret_random_string_987")
+# Session middleware configured for Render proxy headers
+app.add_middleware(
+    SessionMiddleware, 
+    secret_key="svnit_super_secret_random_string_987",
+    same_site="lax",
+    https_only=True
+)
 
 templates = Jinja2Templates(directory="templates")
-
-import os
-import sqlite3
 
 # Environment variables provided by Render (or your local environment)
 TURSO_DATABASE_URL = os.environ.get("TURSO_DATABASE_URL")
@@ -33,6 +36,7 @@ def get_db():
             database=TURSO_DATABASE_URL, 
             auth_token=TURSO_AUTH_TOKEN
         )
+        conn.row_factory = libsql.Row  # Column names work for Turso
         return conn
     else:
         conn = sqlite3.connect("svnit_network.db")
@@ -74,6 +78,17 @@ def init_db():
     cursor = conn.cursor()
     
     cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            email TEXT PRIMARY KEY,
+            name TEXT,
+            department TEXT,
+            batch TEXT,
+            avatar_url TEXT DEFAULT '',
+            bio TEXT DEFAULT ''
+        )
+    """)
+    
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS questions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_email TEXT,
@@ -82,17 +97,6 @@ def init_db():
             batch TEXT,
             content TEXT,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            email TEXT PRIMARY KEY,
-            name TEXT,
-            department TEXT,
-            batch TEXT,
-            avatar_url TEXT DEFAULT '',
-            bio TEXT DEFAULT ''
         )
     """)
     
@@ -139,7 +143,7 @@ def init_db():
         try:
             cursor.execute(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}")
         except Exception:
-            pass # Column already exists, ignore error
+            pass
     
     conn.commit()
     conn.close()
@@ -155,13 +159,12 @@ def parse_svnit_email(email: str):
     department = "General / Undergraduate"
     batch_year = "2026"
     
-    # Check specific department codes first (longest/most specific patterns first)
     if "ai" in local_part:
         department = "Artificial Intelligence"
     elif "ece" in local_part or "ec" in local_part:
         department = "Electronics and Communication"
     elif "cs" in local_part or "co" in local_part:
-        department = "Computer Science "
+        department = "Computer Science"
     elif "ee" in local_part:
         department = "Electrical Engineering"
     elif "me" in local_part or "mech" in local_part:
@@ -171,22 +174,19 @@ def parse_svnit_email(email: str):
     elif "ch" in local_part or "che" in local_part:
         department = "Chemical Engineering"
     elif "ph" in local_part or "phy" in local_part:
-            department = "Physics"
+        department = "Physics"
     elif "cy" in local_part or "chem" in local_part:
-                department = "Chemistry"
+        department = "Chemistry"
     elif "mh" in local_part or "amh" in local_part:
-                department = "Mathematics"
+        department = "Mathematics"
     elif "ic" in local_part or "id" in local_part:
-                department = "Industrial Chemistry"
+        department = "Industrial Chemistry"
     elif "vl" in local_part or "eve" in local_part:
-                department = "Electronics and VLSI"
-    
+        department = "Electronics and VLSI"
         
-    # Extract batch year from patterns like i26, u24, 26, etc.
     match = re.search(r'(?:i|u)?(\d{2})', local_part)
     if match:
         YY = match.group(1)
-        # Assuming 21-30 are 2020s batches
         if int(YY) >= 20 and int(YY) <= 30:
             batch_year = f"20{YY}"
         
@@ -203,7 +203,6 @@ async def home(request: Request):
     if user:
         return RedirectResponse(url="/dashboard", status_code=303)
     
-    # Clear invalid session leftovers if any exist
     if "user" in request.session and not user:
         request.session.clear()
         
@@ -235,7 +234,6 @@ async def auth_callback(request: Request):
 
     parsed_metadata = parse_svnit_email(email)
 
-    # UPDATED: Use your get_db() helper to connect to Turso in production
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("""
@@ -261,30 +259,6 @@ async def auth_callback(request: Request):
     }
 
     return RedirectResponse(url="/dashboard", status_code=303)
-
-@app.on_event("startup")
-def startup():
-    db = get_db()
-    # Create tables if not exists
-    db.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email TEXT UNIQUE,
-            name TEXT,
-            branch TEXT,
-            bio TEXT
-        )
-    """)
-    db.execute("""
-        CREATE TABLE IF NOT EXISTS questions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            content TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    # Add any other CREATE TABLE IF NOT EXISTS statements here
-    db.commit()
 
 @app.get("/dashboard")
 async def dashboard(request: Request):
@@ -363,7 +337,7 @@ async def create_question(question: QuestionCreate, request: Request):
     if not user:
         return {"error": "Unauthorized"}
     
-    conn = sqlite3.connect("svnit_network.db")
+    conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
         "INSERT INTO questions (user_email, user_name, department, batch, content) VALUES (?, ?, ?, ?, ?)",
@@ -378,7 +352,7 @@ async def get_questions(request: Request):
     user = get_current_user(request)
     my_email = user.get('email') if user else ""
 
-    conn = sqlite3.connect("svnit_network.db")
+    conn = get_db()
     cursor = conn.cursor()
     cursor.execute("""
         SELECT q.id, q.user_email, q.user_name, q.department, q.batch, q.content, q.timestamp,
@@ -414,7 +388,7 @@ async def toggle_upvote(question_id: int, request: Request):
         return {"error": "Unauthorized"}
     
     my_email = user.get('email')
-    conn = sqlite3.connect("svnit_network.db")
+    conn = get_db()
     cursor = conn.cursor()
     
     cursor.execute("SELECT 1 FROM upvotes WHERE question_id = ? AND user_email = ?", (question_id, my_email))
@@ -433,7 +407,7 @@ async def toggle_upvote(question_id: int, request: Request):
 
 @app.get("/api/questions/{question_id}/replies")
 async def get_replies(question_id: int, request: Request):
-    conn = sqlite3.connect("svnit_network.db")
+    conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT id, user_email, user_name, department, batch, content, timestamp FROM replies WHERE question_id = ? ORDER BY id ASC", (question_id,))
     rows = cursor.fetchall()
@@ -458,7 +432,7 @@ async def create_reply(question_id: int, reply: ReplyCreate, request: Request):
     if not user:
         return {"error": "Unauthorized"}
     
-    conn = sqlite3.connect("svnit_network.db")
+    conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
         "INSERT INTO replies (question_id, user_email, user_name, department, batch, content) VALUES (?, ?, ?, ?, ?, ?)",
@@ -474,7 +448,7 @@ async def delete_question(question_id: int, request: Request):
     if not user:
         return {"error": "Unauthorized"}
     
-    conn = sqlite3.connect("svnit_network.db")
+    conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT user_email FROM questions WHERE id = ?", (question_id,))
     row = cursor.fetchone()
@@ -506,7 +480,7 @@ async def get_users(request: Request):
     if not user:
         return {"error": "Unauthorized"}
     
-    conn = sqlite3.connect("svnit_network.db")
+    conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT email, name, department, batch FROM users WHERE email != ?", (user.get('email'),))
     rows = cursor.fetchall()
@@ -528,7 +502,7 @@ async def send_message(msg: MessageCreate, request: Request):
     if not user:
         return {"error": "Unauthorized"}
     
-    conn = sqlite3.connect("svnit_network.db")
+    conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
         "INSERT INTO messages (sender_email, recipient_email, content) VALUES (?, ?, ?)",
@@ -545,7 +519,7 @@ async def get_messages(peer_email: str, request: Request):
         return {"error": "Unauthorized"}
     
     my_email = user.get('email')
-    conn = sqlite3.connect("svnit_network.db")
+    conn = get_db()
     cursor = conn.cursor()
     cursor.execute("""
         SELECT sender_email, recipient_email, content, timestamp 
