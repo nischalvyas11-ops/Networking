@@ -14,10 +14,30 @@ app.add_middleware(SessionMiddleware, secret_key="svnit_super_secret_random_stri
 
 templates = Jinja2Templates(directory="templates")
 
+import os
+import sqlite3
+
+# Environment variables provided by Render (or your local environment)
+TURSO_DATABASE_URL = os.environ.get("TURSO_DATABASE_URL")
+TURSO_AUTH_TOKEN = os.environ.get("TURSO_AUTH_TOKEN")
+
 def get_db():
-    conn = sqlite3.connect("svnit_network.db")
-    conn.row_factory = sqlite3.Row
-    return conn
+    """
+    Returns a database connection.
+    Uses Turso (libsql) in production when environment variables are present,
+    otherwise falls back to local SQLite for offline/dev testing.
+    """
+    if TURSO_DATABASE_URL and TURSO_AUTH_TOKEN:
+        import libsql
+        conn = libsql.connect(
+            database=TURSO_DATABASE_URL, 
+            auth_token=TURSO_AUTH_TOKEN
+        )
+        return conn
+    else:
+        conn = sqlite3.connect("svnit_network.db")
+        conn.row_factory = sqlite3.Row
+        return conn
 
 def get_current_user(request: Request):
     user_session = request.session.get("user")
@@ -240,6 +260,30 @@ async def auth_callback(request: Request):
     }
 
     return RedirectResponse(url="/dashboard", status_code=303)
+
+@app.on_event("startup")
+def startup():
+    db = get_db()
+    # Create tables if not exists
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT UNIQUE,
+            name TEXT,
+            branch TEXT,
+            bio TEXT
+        )
+    """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS questions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            content TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    # Add any other CREATE TABLE IF NOT EXISTS statements here
+    db.commit()
 
 @app.get("/dashboard")
 async def dashboard(request: Request):
