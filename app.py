@@ -8,7 +8,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from authlib.integrations.starlette_client import OAuth
 from pydantic import BaseModel
 
-app = FastAPI()
+app = FastAPI(title="SVNIT Networking")
 
 # Session middleware configured for Render proxy headers
 app.add_middleware(
@@ -19,6 +19,10 @@ app.add_middleware(
 )
 
 templates = Jinja2Templates(directory="templates")
+
+if os.path.exists("static"):
+    from fastapi.staticfiles import StaticFiles
+    app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Environment variables provided by Render (or your local environment)
 TURSO_DATABASE_URL = os.environ.get("TURSO_DATABASE_URL")
@@ -55,11 +59,11 @@ def get_current_user(request: Request):
         conn.close()
         
         if row:
-            # Handle both sqlite3.Row (has keys) and Turso tuples (by column description)
             if hasattr(row, "keys"):
                 return dict(row)
-            columns = [col[0] for col in cursor.description]
-            return dict(zip(columns, row))
+            if cursor.description:
+                columns = [col[0] for col in cursor.description]
+                return dict(zip(columns, row))
     except Exception:
         pass
     
