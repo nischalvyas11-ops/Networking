@@ -28,18 +28,57 @@ if os.path.exists("static"):
 TURSO_DATABASE_URL = os.environ.get("TURSO_DATABASE_URL")
 TURSO_AUTH_TOKEN = os.environ.get("TURSO_AUTH_TOKEN")
 
+# Pure-python adapter so libsql-client matches sqlite3 syntax
+class TursoCursorWrapper:
+    def __init__(self, client, sql, params):
+        res = client.execute(sql, list(params) if params else [])
+        self.rows = res.rows if hasattr(res, "rows") else []
+        self.idx = 0
+        self.description = [(col,) for col in res.columns] if hasattr(res, "columns") else []
+
+    def fetchone(self):
+        if self.idx < len(self.rows):
+            row = self.rows[self.idx]
+            self.idx += 1
+            return row
+        return None
+
+    def fetchall(self):
+        res = self.rows[self.idx:]
+        self.idx = len(self.rows)
+        return res
+
+class TursoConnWrapper:
+    def __init__(self, client):
+        self.client = client
+    def cursor(self):
+        return self
+    def execute(self, sql, params=()):
+        return TursoCursorWrapper(self.client, sql, params)
+    def commit(self):
+        pass
+    def close(self):
+        self.client.close()
+
 def get_db():
     """
-    Returns a robust database connection for Turso cloud or local fallback.
+    Returns a robust database connection using pure-python libsql-client for Turso
+    or falling back to local SQLite for development.
     """
     if TURSO_DATABASE_URL and TURSO_AUTH_TOKEN:
-        import libsql
+        import libsql_client
+        url = TURSO_DATABASE_URL
+        if url.startswith("libsql://"):
+            url = url.replace("libsql://", "https://")
+        elif url.startswith("turso://"):
+            url = url.replace("turso://", "https://")
+        
         try:
-            conn = libsql.connect(
-                database=TURSO_DATABASE_URL, 
+            client = libsql_client.create_client_sync(
+                url=url, 
                 auth_token=TURSO_AUTH_TOKEN
             )
-            return conn
+            return TursoConnWrapper(client)
         except Exception as e:
             print(f"Turso connection error: {e}")
             raise HTTPException(status_code=500, detail="Cloud database connection failed.")

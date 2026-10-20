@@ -1,11 +1,8 @@
-
 fastapi
 uvicorn
-jinja2
 authlib
-starlette
 itsdangerous
-httpx
-python-multipart
+jinja2
 pydantic
-libsql
+libsql-client
+requestss
