@@ -96,7 +96,7 @@ def get_db():
     else:
         conn = sqlite3.connect("svnit_network.db")
         conn.row_factory = sqlite3.Row
-        return conns
+        return conn
 
 def get_current_user(request: Request):
     user_session = request.session.get("user")
@@ -338,44 +338,7 @@ async def inbox(request: Request):
             "email": user.get("email", "")
         }
     )
-@app.get("/api/questions")
-async def get_questions(request: Request):
-    user = get_current_user(request)
-    my_email = user.get('email') if user else ""
 
-    try:
-        conn = get_db()
-        cursor = conn.cursor()
-        # Single efficient query with inline subqueries for upvotes and replies
-        cursor.execute("""
-            SELECT q.id, q.user_email, q.user_name, q.department, q.batch, q.content, q.timestamp,
-                   (SELECT COUNT(*) FROM upvotes WHERE question_id = q.id) AS upvotes,
-                   (SELECT COUNT(*) FROM upvotes WHERE question_id = q.id AND user_email = ?) AS has_upvoted,
-                   (SELECT COUNT(*) FROM replies WHERE question_id = q.id) AS reply_count
-            FROM questions q
-            ORDER BY q.id DESC
-        """, (my_email,))
-        rows = cursor.fetchall()
-        conn.close()
-        
-        questions = []
-        for row in rows:
-            questions.append({
-                "id": row[0],
-                "user_email": row[1],
-                "user_name": row[2],
-                "department": row[3],
-                "batch": row[4],
-                "content": row[5],
-                "timestamp": row[6],
-                "upvotes": row[7],
-                "has_upvoted": bool(row[8]),
-                "reply_count": row[9]
-            })
-        return questions
-    except Exception as e:
-        print(f"Error fetching questions: {e}")
-        return []
 
 @app.get("/profile", response_class=HTMLResponse)
 async def view_profile(request: Request):
@@ -419,22 +382,34 @@ class ReplyCreate(BaseModel):
     content: str
 
 @app.post("/api/questions")
-async def create_question(question: QuestionCreate, request: Request):
+async def create_question(request: Request, content: str = Form(None)):
     user = get_current_user(request)
     if not user:
         return {"error": "Unauthorized"}
+    
+    # Fallback to JSON body if form data wasn't used by frontend JS
+    if not content:
+        try:
+            body = await request.json()
+            content = body.get("content")
+        except Exception:
+            pass
+            
+    if not content or not content.strip():
+        return {"error": "Question content cannot be empty"}
     
     try:
         conn = get_db()
         cursor = conn.cursor()
         cursor.execute(
             "INSERT INTO questions (user_email, user_name, department, batch, content) VALUES (?, ?, ?, ?, ?)",
-            (user.get('email'), user.get('name'), user.get('department'), user.get('batch'), question.content)
+            (user.get('email'), user.get('name'), user.get('department'), user.get('batch'), content.strip())
         )
         conn.commit()
         conn.close()
         return {"status": "success"}
     except Exception as e:
+        print(f"Post question error: {e}")
         return {"error": str(e)}
 
 @app.get("/api/questions")
@@ -538,37 +513,6 @@ async def get_replies(question_id: int, request: Request):
         return replies
     except Exception:
         return []
-
-@app.post("/api/questions")
-async def create_question(request: Request, content: str = Form(None)):
-    user = get_current_user(request)
-    if not user:
-        return {"error": "Unauthorized"}
-    
-    # Fallback to JSON body if form data wasn't used by frontend JS
-    if not content:
-        try:
-            body = await request.json()
-            content = body.get("content")
-        except Exception:
-            pass
-            
-    if not content or not content.strip():
-        return {"error": "Question content cannot be empty"}
-    
-    try:
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute(
-            "INSERT INTO questions (user_email, user_name, department, batch, content) VALUES (?, ?, ?, ?, ?)",
-            (user.get('email'), user.get('name'), user.get('department'), user.get('batch'), content.strip())
-        )
-        conn.commit()
-        conn.close()
-        return {"status": "success"}
-    except Exception as e:
-        print(f"Post question error: {e}")
-        return {"error": str(e)}
 
 @app.delete("/api/questions/{question_id}")
 async def delete_question(question_id: int, request: Request):
