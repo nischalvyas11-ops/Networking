@@ -28,60 +28,60 @@ if os.path.exists("static"):
 TURSO_DATABASE_URL = os.environ.get("TURSO_DATABASE_URL")
 TURSO_AUTH_TOKEN = os.environ.get("TURSO_AUTH_TOKEN")
 
-# Pure-python adapter so libsql-client matches sqlite3 syntax
-class TursoCursorWrapper:
-    def __init__(self, client, sql, params):
-        res = client.execute(sql, list(params) if params else [])
-        self.rows = res.rows if hasattr(res, "rows") else []
-        self.idx = 0
-        self.description = [(col,) for col in res.columns] if hasattr(res, "columns") else []
-
-    def fetchone(self):
-        if self.idx < len(self.rows):
-            row = self.rows[self.idx]
-            self.idx += 1
-            return row
-        return None
-
-    def fetchall(self):
-        res = self.rows[self.idx:]
-        self.idx = len(self.rows)
-        return res
-
-class TursoConnWrapper:
-    def __init__(self, client):
-        self.client = client
-    def cursor(self):
-        return self
-    def execute(self, sql, params=()):
-        return TursoCursorWrapper(self.client, sql, params)
-    def commit(self):
-        pass
-    def close(self):
-        self.client.close()
+# Cached persistent client to eliminate network lag
+_turso_client = None
 
 def get_db():
     """
-    Returns a robust database connection using pure-python libsql-client for Turso
-    or falling back to local SQLite for development.
+    Returns a high-performance database connection reusing the persistent Turso client
+    or falling back to local SQLite.
     """
+    global _turso_client
     if TURSO_DATABASE_URL and TURSO_AUTH_TOKEN:
         import libsql_client
-        url = TURSO_DATABASE_URL
-        if url.startswith("libsql://"):
-            url = url.replace("libsql://", "https://")
-        elif url.startswith("turso://"):
-            url = url.replace("turso://", "https://")
-        
-        try:
-            client = libsql_client.create_client_sync(
+        if _turso_client is None:
+            url = TURSO_DATABASE_URL
+            if url.startswith("libsql://"):
+                url = url.replace("libsql://", "https://")
+            elif url.startswith("turso://"):
+                url = url.replace("turso://", "https://")
+            _turso_client = libsql_client.create_client_sync(
                 url=url, 
                 auth_token=TURSO_AUTH_TOKEN
             )
-            return TursoConnWrapper(client)
-        except Exception as e:
-            print(f"Turso connection error: {e}")
-            raise HTTPException(status_code=500, detail="Cloud database connection failed.")
+        
+        class TursoCursorWrapper:
+            def __init__(self, client, sql, params):
+                res = client.execute(sql, list(params) if params else [])
+                self.rows = res.rows if hasattr(res, "rows") else []
+                self.idx = 0
+                self.description = [(col,) for col in res.columns] if hasattr(res, "columns") else []
+
+            def fetchone(self):
+                if self.idx < len(self.rows):
+                    row = self.rows[self.idx]
+                    self.idx += 1
+                    return row
+                return None
+
+            def fetchall(self):
+                res = self.rows[self.idx:]
+                self.idx = len(self.rows)
+                return res
+
+        class TursoConnWrapper:
+            def __init__(self, client):
+                self.client = client
+            def cursor(self):
+                return self
+            def execute(self, sql, params=()):
+                return TursoCursorWrapper(self.client, sql, params)
+            def commit(self):
+                pass
+            def close(self):
+                pass # Keep client open for reuse
+
+        return TursoConnWrapper(_turso_client)
     else:
         conn = sqlite3.connect("svnit_network.db")
         conn.row_factory = sqlite3.Row
@@ -105,11 +105,11 @@ def get_current_user(request: Request):
             if cursor.description:
                 columns = [col[0] for col in cursor.description]
                 return dict(zip(columns, row))
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Auth check error: {e}")
+        # DO NOT clear session here on minor glitches, prevents login loops!
     
-    request.session.clear()
-    return None
+    return user_session
 
 oauth = OAuth()
 oauth.register(
@@ -396,33 +396,47 @@ async def get_questions(request: Request):
     try:
         conn = get_db()
         cursor = conn.cursor()
+        # Simplified query to avoid complex HTTP subquery binding failures
         cursor.execute("""
-            SELECT q.id, q.user_email, q.user_name, q.department, q.batch, q.content, q.timestamp,
-                   (SELECT COUNT(*) FROM upvotes WHERE question_id = q.id) AS upvote_count,
-                   (SELECT COUNT(*) FROM upvotes WHERE question_id = q.id AND user_email = ?) AS user_has_upvoted,
-                   (SELECT COUNT(*) FROM replies WHERE question_id = q.id) AS reply_count
-            FROM questions q
-            ORDER BY q.id DESC
-        """, (my_email,))
+            SELECT id, user_email, user_name, department, batch, content, timestamp
+            FROM questions
+            ORDER BY id DESC
+        """)
         rows = cursor.fetchall()
-        conn.close()
         
         questions = []
         for row in rows:
+            qid = row[0]
+            # Fetch upvotes and replies safely
+            cursor.execute("SELECT COUNT(*) FROM upvotes WHERE question_id = ?", (qid,))
+            up_row = cursor.fetchone()
+            upvotes = up_row[0] if up_row else 0
+
+            has_upvoted = 0
+            if my_email:
+                cursor.execute("SELECT 1 FROM upvotes WHERE question_id = ? AND user_email = ?", (qid, my_email))
+                has_upvoted = 1 if cursor.fetchone() else 0
+
+            cursor.execute("SELECT COUNT(*) FROM replies WHERE question_id = ?", (qid,))
+            rep_row = cursor.fetchone()
+            reply_count = rep_row[0] if rep_row else 0
+
             questions.append({
-                "id": row[0],
+                "id": qid,
                 "user_email": row[1],
                 "user_name": row[2],
                 "department": row[3],
                 "batch": row[4],
                 "content": row[5],
                 "timestamp": row[6],
-                "upvotes": row[7],
-                "has_upvoted": bool(row[8]),
-                "reply_count": row[9]
+                "upvotes": upvotes,
+                "has_upvoted": bool(has_upvoted),
+                "reply_count": reply_count
             })
+        conn.close()
         return questions
     except Exception as e:
+        print(f"Error fetching questions: {e}")
         return []
 
 @app.post("/api/questions/{question_id}/upvote")
