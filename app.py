@@ -62,15 +62,15 @@ class TursoConnWrapper:
         self.last_cursor = TursoCursorWrapper(self.client, sql, params)
         return self.last_cursor
 
+    @property
+    def description(self):
+        return self.last_cursor.description if self.last_cursor else None
+
     def fetchone(self):
-        if self.last_cursor:
-            return self.last_cursor.fetchone()
-        return None
+        return self.last_cursor.fetchone() if self.last_cursor else None
 
     def fetchall(self):
-        if self.last_cursor:
-            return self.last_cursor.fetchall()
-        return []
+        return self.last_cursor.fetchall() if self.last_cursor else []
 
     def commit(self):
         pass
@@ -97,7 +97,6 @@ def get_db():
         conn = sqlite3.connect("svnit_network.db")
         conn.row_factory = sqlite3.Row
         return conn
-
 def get_current_user(request: Request):
     user_session = request.session.get("user")
     if not user_session or "email" not in user_session:
