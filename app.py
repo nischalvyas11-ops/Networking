@@ -31,11 +31,54 @@ TURSO_AUTH_TOKEN = os.environ.get("TURSO_AUTH_TOKEN")
 # Cached persistent client to eliminate network lag
 _turso_client = None
 
+class TursoCursorWrapper:
+    def __init__(self, client, sql, params):
+        res = client.execute(sql, list(params) if params else [])
+        self.rows = res.rows if hasattr(res, "rows") else []
+        self.idx = 0
+        self.description = [(col,) for col in res.columns] if hasattr(res, "columns") else []
+
+    def fetchone(self):
+        if self.idx < len(self.rows):
+            row = self.rows[self.idx]
+            self.idx += 1
+            return row
+        return None
+
+    def fetchall(self):
+        res = self.rows[self.idx:]
+        self.idx = len(self.rows)
+        return res
+
+class TursoConnWrapper:
+    def __init__(self, client):
+        self.client = client
+        self.last_cursor = None
+
+    def cursor(self):
+        return self
+
+    def execute(self, sql, params=()):
+        self.last_cursor = TursoCursorWrapper(self.client, sql, params)
+        return self.last_cursor
+
+    def fetchone(self):
+        if self.last_cursor:
+            return self.last_cursor.fetchone()
+        return None
+
+    def fetchall(self):
+        if self.last_cursor:
+            return self.last_cursor.fetchall()
+        return []
+
+    def commit(self):
+        pass
+
+    def close(self):
+        pass
+
 def get_db():
-    """
-    Returns a high-performance database connection reusing the persistent Turso client
-    or falling back to local SQLite.
-    """
     global _turso_client
     if TURSO_DATABASE_URL and TURSO_AUTH_TOKEN:
         import libsql_client
@@ -49,43 +92,11 @@ def get_db():
                 url=url, 
                 auth_token=TURSO_AUTH_TOKEN
             )
-        
-        class TursoCursorWrapper:
-            def __init__(self, client, sql, params):
-                res = client.execute(sql, list(params) if params else [])
-                self.rows = res.rows if hasattr(res, "rows") else []
-                self.idx = 0
-                self.description = [(col,) for col in res.columns] if hasattr(res, "columns") else []
-
-            def fetchone(self):
-                if self.idx < len(self.rows):
-                    row = self.rows[self.idx]
-                    self.idx += 1
-                    return row
-                return None
-
-            def fetchall(self):
-                res = self.rows[self.idx:]
-                self.idx = len(self.rows)
-                return res
-
-        class TursoConnWrapper:
-            def __init__(self, client):
-                self.client = client
-            def cursor(self):
-                return self
-            def execute(self, sql, params=()):
-                return TursoCursorWrapper(self.client, sql, params)
-            def commit(self):
-                pass
-            def close(self):
-                pass # Keep client open for reuse
-
         return TursoConnWrapper(_turso_client)
     else:
         conn = sqlite3.connect("svnit_network.db")
         conn.row_factory = sqlite3.Row
-        return conn
+        return conns
 
 def get_current_user(request: Request):
     user_session = request.session.get("user")
