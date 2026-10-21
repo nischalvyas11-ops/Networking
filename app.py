@@ -490,23 +490,35 @@ async def get_replies(question_id: int, request: Request):
     except Exception:
         return []
 
-@app.post("/api/questions/{question_id}/replies")
-async def create_reply(question_id: int, reply: ReplyCreate, request: Request):
+@app.post("/api/questions")
+async def create_question(request: Request, content: str = Form(None)):
     user = get_current_user(request)
     if not user:
         return {"error": "Unauthorized"}
+    
+    # Fallback to JSON body if form data wasn't used by frontend JS
+    if not content:
+        try:
+            body = await request.json()
+            content = body.get("content")
+        except Exception:
+            pass
+            
+    if not content or not content.strip():
+        return {"error": "Question content cannot be empty"}
     
     try:
         conn = get_db()
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO replies (question_id, user_email, user_name, department, batch, content) VALUES (?, ?, ?, ?, ?, ?)",
-            (question_id, user.get('email'), user.get('name'), user.get('department'), user.get('batch'), reply.content)
+            "INSERT INTO questions (user_email, user_name, department, batch, content) VALUES (?, ?, ?, ?, ?)",
+            (user.get('email'), user.get('name'), user.get('department'), user.get('batch'), content.strip())
         )
         conn.commit()
         conn.close()
         return {"status": "success"}
     except Exception as e:
+        print(f"Post question error: {e}")
         return {"error": str(e)}
 
 @app.delete("/api/questions/{question_id}")
