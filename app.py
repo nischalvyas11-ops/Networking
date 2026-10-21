@@ -213,7 +213,7 @@ def parse_svnit_email(email: str):
         department = "Physics"
     elif "cy" in local_part or "chem" in local_part:
         department = "Chemistry"
-    elif "mh" in local_part or "amh" in local_part:
+    elif "ma" in local_part or "amh" in local_part:
         department = "Mathematics"
     elif "ic" in local_part or "id" in local_part:
         department = "Industrial Chemistry"
@@ -327,6 +327,44 @@ async def inbox(request: Request):
             "email": user.get("email", "")
         }
     )
+@app.get("/api/questions")
+async def get_questions(request: Request):
+    user = get_current_user(request)
+    my_email = user.get('email') if user else ""
+
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        # Single efficient query with inline subqueries for upvotes and replies
+        cursor.execute("""
+            SELECT q.id, q.user_email, q.user_name, q.department, q.batch, q.content, q.timestamp,
+                   (SELECT COUNT(*) FROM upvotes WHERE question_id = q.id) AS upvotes,
+                   (SELECT COUNT(*) FROM upvotes WHERE question_id = q.id AND user_email = ?) AS has_upvoted,
+                   (SELECT COUNT(*) FROM replies WHERE question_id = q.id) AS reply_count
+            FROM questions q
+            ORDER BY q.id DESC
+        """, (my_email,))
+        rows = cursor.fetchall()
+        conn.close()
+        
+        questions = []
+        for row in rows:
+            questions.append({
+                "id": row[0],
+                "user_email": row[1],
+                "user_name": row[2],
+                "department": row[3],
+                "batch": row[4],
+                "content": row[5],
+                "timestamp": row[6],
+                "upvotes": row[7],
+                "has_upvoted": bool(row[8]),
+                "reply_count": row[9]
+            })
+        return questions
+    except Exception as e:
+        print(f"Error fetching questions: {e}")
+        return []
 
 @app.get("/profile", response_class=HTMLResponse)
 async def view_profile(request: Request):
